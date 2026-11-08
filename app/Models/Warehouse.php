@@ -17,6 +17,8 @@ class Warehouse extends Model
         'name',
         'code',
         'type',
+        'allow_sales',
+        'pos_sale_source',
         'address',
         'phone',
         'is_default',
@@ -27,6 +29,7 @@ class Warehouse extends Model
     protected $casts = [
         'is_default' => 'boolean',
         'is_active' => 'boolean',
+        'allow_sales' => 'boolean',
     ];
 
     public function restaurant(): BelongsTo

@@ -31,6 +31,7 @@ class Product extends Model
         'purchase_unit',
         'expiry_alert_days',
         'low_stock_threshold',
+        'default_warehouse_id',
         'is_available',
         'is_featured',
         'is_best_seller',

@@ -102,6 +102,19 @@ class EnsureApiPermission
             return 'view_dashboard';
         }
 
+        if ($resource === 'stock-requests') {
+            if ($read) {
+                return ['view_stock_requests', 'approve_stock_requests', 'create_stock_requests'];
+            }
+            if ($method === 'POST' && str_contains($uri, 'approve')) {
+                return 'approve_stock_requests';
+            }
+            if ($method === 'POST' && str_contains($uri, 'reject')) {
+                return 'reject_stock_requests';
+            }
+            return 'create_stock_requests';
+        }
+
         $prefix = [
             'products' => 'products',
             'categories' => 'categories',

@@ -210,6 +210,8 @@ class PurchaseItem extends Model
     protected $fillable = [
         'purchase_id',
         'inventory_item_id',
+        'product_id',
+        'warehouse_id',
         'quantity',
         'unit_cost',
         'total_cost',

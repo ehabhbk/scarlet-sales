@@ -61,6 +61,9 @@ class ProductController extends Controller
         $validated['slug'] = $validated['slug'] ?? \Illuminate\Support\Str::slug($validated['name']);
         $validated['track_inventory'] = $request->boolean('track_inventory', true);
         $validated['is_available'] = $request->boolean('is_available', true);
+        if (isset($validated['warehouse_id'])) {
+            $validated['default_warehouse_id'] = $validated['warehouse_id'];
+        }
         if ($request->hasFile('image_file')) {
             $validated['image'] = $request->file('image_file')->store('products', 'public');
         }
