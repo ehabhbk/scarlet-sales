@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\JournalEntry;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use App\Models\Warehouse;
+use App\Http\Services\StockService;
 use App\Services\JournalPostingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +21,9 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryItemController extends Controller
 {
+    public function __construct(protected StockService $stock)
+    {
+    }
     public function index(Request $request)
     {
         $restaurantId = $request->user()->restaurant_id;
@@ -238,7 +244,9 @@ class PurchaseController extends Controller
             'expected_date' => 'nullable|date',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
-            'items.*.inventory_item_id' => 'required|exists:inventory_items,id',
+            'items.*.inventory_item_id' => 'nullable|exists:inventory_items,id',
+            'items.*.product_id' => 'nullable|exists:products,id',
+            'items.*.warehouse_id' => 'nullable|integer',
             'items.*.quantity' => 'required|numeric|min:0',
             'items.*.unit_cost' => 'required|numeric|min:0',
             'items.*.expiry_date' => 'nullable|date',
@@ -293,13 +301,37 @@ class PurchaseController extends Controller
             ]);
 
             foreach ($validated['items'] as $it) {
-                $item = InventoryItem::find($it['inventory_item_id']);
-                if ($item->restaurant_id !== $restaurantId) {
-                    abort(403);
+                $inventoryItemId = $it['inventory_item_id'] ?? null;
+                $productId = $it['product_id'] ?? null;
+                $warehouseId = $it['warehouse_id'] ?? null;
+
+                if ($inventoryItemId) {
+                    $item = InventoryItem::find($inventoryItemId);
+                    if ($item->restaurant_id !== $restaurantId) {
+                        abort(403);
+                    }
                 }
+                if ($productId) {
+                    $product = Product::find($productId);
+                    if (!$product || (int) $product->restaurant_id !== $restaurantId) {
+                        abort(403);
+                    }
+                    if (!$warehouseId) {
+                        $warehouseId = (int) ($product->default_warehouse_id ?: 0);
+                    }
+                    if (!$warehouseId) {
+                        $warehouseId = Warehouse::where('restaurant_id', $restaurantId)
+                            ->where('is_active', true)
+                            ->orderBy('is_default', 'desc')
+                            ->value('id');
+                    }
+                }
+
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
-                    'inventory_item_id' => $it['inventory_item_id'],
+                    'inventory_item_id' => $inventoryItemId,
+                    'product_id' => $productId,
+                    'warehouse_id' => $warehouseId,
                     'quantity' => $it['quantity'],
                     'unit_cost' => $it['unit_cost'],
                     'total_cost' => (float) $it['quantity'] * (float) $it['unit_cost'],
@@ -308,23 +340,48 @@ class PurchaseController extends Controller
                 ]);
             }
 
-            // If received, add to inventory
+            // If received, add to inventory (product batches or legacy inventory items)
             if ($purchaseStatus === 'received') {
                 foreach ($validated['items'] as $it) {
-                    $item = InventoryItem::find($it['inventory_item_id']);
-                    $item->increment('current_stock', (float) $it['quantity']);
-                    StockMovement::create([
-                        'restaurant_id' => $restaurantId,
-                        'inventory_item_id' => $it['inventory_item_id'],
-                        'type' => 'in',
-                        'quantity' => (float) $it['quantity'],
-                        'cost_per_unit' => (float) $it['unit_cost'],
-                        'total_cost' => (float) $it['quantity'] * (float) $it['unit_cost'],
-                        'reference_type' => 'purchase',
-                        'reference_id' => $purchase->id,
-                        'user_id' => $request->user()->id,
-                        'notes' => "استلام مشتريات #{$validated['purchase_number']}",
-                    ]);
+                    $inventoryItemId = $it['inventory_item_id'] ?? null;
+                    $productId = $it['product_id'] ?? null;
+                    $warehouseId = $it['warehouse_id'] ?? null;
+                    $qty = (float) $it['quantity'];
+                    $cost = (float) $it['unit_cost'];
+
+                    if ($productId && $warehouseId) {
+                        $this->stock->stockIn(
+                            $restaurantId,
+                            (int) $warehouseId,
+                            (int) $productId,
+                            $qty,
+                            [
+                                'cost_price' => $cost,
+                                'expiry_date' => $it['expiry_date'] ?? null,
+                                'batch_number' => $it['batch_number'] ?? null,
+                                'supplier_id' => $validated['supplier_id'],
+                            ],
+                            (int) $request->user()->id,
+                            'purchase_receive'
+                        );
+                        continue;
+                    }
+                    if ($inventoryItemId) {
+                        $item = InventoryItem::find($inventoryItemId);
+                        $item->increment('current_stock', $qty);
+                        StockMovement::create([
+                            'restaurant_id' => $restaurantId,
+                            'inventory_item_id' => $inventoryItemId,
+                            'type' => 'in',
+                            'quantity' => $qty,
+                            'cost_per_unit' => $cost,
+                            'total_cost' => $qty * $cost,
+                            'reference_type' => 'purchase',
+                            'reference_id' => $purchase->id,
+                            'user_id' => $request->user()->id,
+                            'notes' => "استلام مشتريات #{$validated['purchase_number']}",
+                        ]);
+                    }
                 }
             }
 
@@ -342,7 +399,7 @@ class PurchaseController extends Controller
             }
 
             return response()->json([
-                'purchase' => $purchase->load('supplier', 'items.inventoryItem', 'account', 'payments'),
+                'purchase' => $purchase->load('supplier', 'items.product', 'items.inventoryItem', 'items.warehouse', 'account', 'payments'),
                 'message' => 'تم إضافة طلب الشراء وقيد المبلغ المدفوع',
             ], 201);
         });
@@ -354,7 +411,7 @@ class PurchaseController extends Controller
             abort(403);
         }
 
-        return response()->json(['purchase' => $purchase->load('supplier', 'user', 'items.inventoryItem', 'account', 'payments')]);
+        return response()->json(['purchase' => $purchase->load('supplier', 'user', 'items.product', 'items.inventoryItem', 'items.warehouse', 'account', 'payments')]);
     }
 
     public function update(Request $request, Purchase $purchase)

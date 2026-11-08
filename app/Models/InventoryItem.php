@@ -235,6 +235,16 @@ class PurchaseItem extends Model
     {
         return $this->belongsTo(InventoryItem::class);
     }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
 }
 
 class StockMovement extends Model
