@@ -43,11 +43,6 @@ final class Lines
             }
         }
 
-        // Emit an unterminated multiline value so the parser reports the missing quote.
-        if ($multiline) {
-            $output[] = \implode("\n", $multilineBuffer);
-        }
-
         return $output;
     }
 
@@ -116,7 +111,11 @@ final class Lines
      */
     private static function looksLikeMultilineStop(string $line, bool $started)
     {
-        return Regex::occurrences('/(?<!\\\\)"/', \str_replace('\\\\', '', $line))->map(static function (int $count) use ($started) {
+        if ($line === '"') {
+            return true;
+        }
+
+        return Regex::occurrences('/(?=([^\\\\]"))/', \str_replace('\\\\', '', $line))->map(static function (int $count) use ($started) {
             return $started ? $count > 1 : $count >= 1;
         })->success()->getOrElse(false);
     }

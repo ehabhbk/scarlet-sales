@@ -106,8 +106,6 @@ abstract class Element
 
     /**
      * Renders the string representation of the element on the output.
-     *
-     * @param  int<0, 511>  $options
      */
     final public function render(int $options): void
     {

@@ -37,8 +37,6 @@ class NativeSessionStorage implements SessionStorageInterface
     protected AbstractProxy|\SessionHandlerInterface $saveHandler;
     protected MetadataBag $metadataBag;
 
-    private static bool $shutdownRegistered = false;
-
     /**
      * Depending on how you want the storage driver to behave you probably
      * want to override this constructor entirely.
@@ -89,10 +87,7 @@ class NativeSessionStorage implements SessionStorageInterface
             'use_strict_mode' => 1,
         ];
 
-        if (!self::$shutdownRegistered) {
-            session_register_shutdown();
-            self::$shutdownRegistered = true;
-        }
+        session_register_shutdown();
 
         $this->setMetadataBag($metaBag);
         $this->setOptions($options);

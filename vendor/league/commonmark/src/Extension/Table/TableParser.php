@@ -62,13 +62,6 @@ final class TableParser extends AbstractBlockContinueParser implements BlockCont
     private int $remainingAutocompletedCells;
 
     /**
-     * Whether the current line may be added to the table as a lazy continuation line
-     *
-     * @psalm-readonly-allow-private-mutation
-     */
-    private bool $canHaveLazyContinuationLines = false;
-
-    /**
      * @param array<int, string|null> $columns
      * @param array<int, string>      $headerCells
      *
@@ -87,7 +80,7 @@ final class TableParser extends AbstractBlockContinueParser implements BlockCont
 
     public function canHaveLazyContinuationLines(): bool
     {
-        return $this->canHaveLazyContinuationLines;
+        return true;
     }
 
     public function getBlock(): Table
@@ -97,11 +90,7 @@ final class TableParser extends AbstractBlockContinueParser implements BlockCont
 
     public function tryContinue(Cursor $cursor, BlockContinueParserInterface $activeBlockParser): ?BlockContinue
     {
-        // A line without a pipe can still become a row via lazy continuation. This is only reached when all
-        // enclosing containers matched; lines whose containers didn't match must not be added lazily.
-        $this->canHaveLazyContinuationLines = \strpos($cursor->getLine(), '|') === false;
-
-        if ($this->canHaveLazyContinuationLines) {
+        if (\strpos($cursor->getLine(), '|') === false) {
             return BlockContinue::none();
         }
 
@@ -110,8 +99,6 @@ final class TableParser extends AbstractBlockContinueParser implements BlockCont
 
     public function addLine(string $line): void
     {
-        $this->canHaveLazyContinuationLines = false;
-
         if ($this->nextIsSeparatorLine) {
             $this->nextIsSeparatorLine = false;
         } else {

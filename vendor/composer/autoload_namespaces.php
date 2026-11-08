@@ -6,4 +6,7 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'Parsedown' => array($vendorDir . '/parsedown/parsedown'),
+    'Mpociot' => array($vendorDir . '/mpociot/reflection-docblock/src'),
+    'HTMLPurifier' => array($vendorDir . '/ezyang/htmlpurifier/library'),
 );

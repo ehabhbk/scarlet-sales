@@ -215,9 +215,7 @@ class CacheAttributeListener implements EventSubscriberInterface
     {
         if (!is_numeric($time)) {
             $now = time();
-            $then = strtotime($time, $now);
-            // ignore daylight saving time changes, so that "1 day" is always 86400 seconds
-            $time = $then - $now + idate('Z', $then) - idate('Z', $now);
+            $time = strtotime($time, $now) - $now;
         }
 
         return $time;

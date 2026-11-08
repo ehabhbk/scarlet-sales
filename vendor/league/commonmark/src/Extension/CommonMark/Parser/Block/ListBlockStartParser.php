@@ -123,7 +123,7 @@ final class ListBlockStartParser implements BlockStartParserInterface, Configura
             }
         }
 
-        $blankItem         = $cursor->isAtEnd();
+        $blankItem         = $cursor->peek() === null;
         $spacesAfterMarker = $cursor->getColumn() - $spacesStartCol;
 
         if ($spacesAfterMarker >= 5 || $spacesAfterMarker < 1 || $blankItem) {

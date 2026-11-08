@@ -11,9 +11,6 @@
 
 namespace Symfony\Contracts\Translation;
 
-/**
- * Gets and sets the current locale.
- */
 interface LocaleAwareInterface
 {
     /**

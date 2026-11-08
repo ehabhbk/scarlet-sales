@@ -42,7 +42,6 @@ class LoggerPass implements CompilerPassInterface
         }
 
         $container->register('logger', Logger::class)
-            ->setArguments([null, null, null, new Reference(RequestStack::class), $debug])
-            ->addTag('kernel.reset', ['method' => 'clear', 'on_invalid' => 'ignore']);
+            ->setArguments([null, null, null, new Reference(RequestStack::class), $debug]);
     }
 }

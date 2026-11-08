@@ -1,4 +1,5 @@
 <?php
+error_log("INDEXPHP_HIT");
 
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;

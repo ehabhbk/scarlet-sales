@@ -42,12 +42,7 @@ class PhpProcess extends Process
         if ('phpdbg' === \PHP_SAPI) {
             $file = tempnam(sys_get_temp_dir(), 'dbg');
             file_put_contents($file, $script);
-            $pid = getmypid();
-            register_shutdown_function(static function () use ($file, $pid) {
-                if ($pid === getmypid()) {
-                    unlink($file);
-                }
-            });
+            register_shutdown_function('unlink', $file);
             $php[] = $file;
             $script = null;
         }

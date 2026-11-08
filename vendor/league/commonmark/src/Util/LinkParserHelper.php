@@ -82,10 +82,8 @@ final class LinkParserHelper
 
     public static function parsePartialLinkTitle(Cursor $cursor, string $endDelimiter): ?string
     {
-        // spec: a parenthesized title may only contain `(` or `)` if backslash-escaped
-        $excluded     = \preg_quote($endDelimiter === ')' ? '()' : $endDelimiter, '/');
         $endDelimiter = \preg_quote($endDelimiter, '/');
-        $regex        = \sprintf('/(%s|[^%s\x00])*(?:%s)?/', RegexHelper::PARTIAL_ESCAPED_CHAR, $excluded, $endDelimiter);
+        $regex        = \sprintf('/(%s|[^%s\x00])*(?:%s)?/', RegexHelper::PARTIAL_ESCAPED_CHAR, $endDelimiter, $endDelimiter);
         if (($partialTitle = $cursor->matchInPlace($regex)) === null) {
             return null;
         }

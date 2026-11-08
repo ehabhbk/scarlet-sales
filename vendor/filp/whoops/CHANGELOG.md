@@ -1,9 +1,5 @@
 # CHANGELOG
 
-## v2.19.0
-
-* `setEditor` has `pathMappings` option that maps server paths to local paths in editor links.
-
 ## v2.18.0
 
 * Line numbers are now clickable.

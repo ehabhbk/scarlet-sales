@@ -9,7 +9,6 @@ Zepto(function($) {
   var $ajaxEditors    = $('.editor-link[data-ajax]');
   var $header         = $('header');
 
-  $header.addClass('header-collapsible');
   $header.on('mouseenter', function () {
     if ($header.find('.exception').height() >= 145) {
       $header.addClass('header-expand');
@@ -46,7 +45,8 @@ Zepto(function($) {
     var line = $activeFrame.find('.code-block .line-highlight').first()[0];
     // [internal] frames might not contain a code-block
     if (line) {
-      line.parentElement.scrollTop = line.offsetTop - (line.parentElement.clientHeight - line.offsetHeight) / 2;
+      line.scrollIntoView();
+      line.parentElement.scrollTop -= 180;
     }
 
     $container.scrollTop(0);

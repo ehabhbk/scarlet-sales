@@ -12,8 +12,6 @@
 namespace Symfony\Contracts\Translation;
 
 /**
- * Translates messages into the current or a given locale.
- *
  * @author Fabien Potencier <fabien@symfony.com>
  */
 interface TranslatorInterface

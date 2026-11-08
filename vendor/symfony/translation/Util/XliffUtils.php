@@ -108,11 +108,8 @@ class XliffUtils
             $dom->loadXML('<?xml version="1.0"?><test/>');
 
             $tmpfile = tempnam(sys_get_temp_dir(), 'symfony');
-            $pid = getmypid();
-            register_shutdown_function(static function () use ($tmpfile, $pid) {
-                if (getmypid() === $pid) {
-                    @unlink($tmpfile);
-                }
+            register_shutdown_function(static function () use ($tmpfile) {
+                @unlink($tmpfile);
             });
             $schema = '<?xml version="1.0" encoding="utf-8"?>
 <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
@@ -170,11 +167,8 @@ class XliffUtils
                 $newPath = self::getFileUrl($path);
             } elseif ($tmpfile = tempnam(sys_get_temp_dir(), 'symfony')) {
                 copy($path, $tmpfile);
-                $pid = getmypid();
-                register_shutdown_function(static function () use ($tmpfile, $pid) {
-                    if (getmypid() === $pid) {
-                        @unlink($tmpfile);
-                    }
+                register_shutdown_function(static function () use ($tmpfile) {
+                    @unlink($tmpfile);
                 });
                 $newPath = self::getFileUrl($tmpfile);
             } else {

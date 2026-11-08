@@ -28,7 +28,6 @@ class Store implements StoreInterface
     private \SplObjectStorage $keyCache;
     /** @var array<string, resource> */
     private array $locks = [];
-    private int|false $pid;
 
     /**
      * Constructor.
@@ -44,7 +43,6 @@ class Store implements StoreInterface
         protected string $root,
         private array $options = [],
     ) {
-        $this->pid = getmypid();
         if (!is_dir($this->root) && !@mkdir($this->root, 0o777, true) && !is_dir($this->root)) {
             throw new \RuntimeException(\sprintf('Unable to create the store directory (%s).', $this->root));
         }
@@ -57,8 +55,6 @@ class Store implements StoreInterface
      */
     public function cleanup(): void
     {
-        $this->resetLocksAfterFork();
-
         // unlock everything
         foreach ($this->locks as $lock) {
             flock($lock, \LOCK_UN);
@@ -75,8 +71,6 @@ class Store implements StoreInterface
      */
     public function lock(Request $request): bool|string
     {
-        $this->resetLocksAfterFork();
-
         $key = $this->getCacheKey($request);
 
         if (!isset($this->locks[$key])) {
@@ -104,8 +98,6 @@ class Store implements StoreInterface
      */
     public function unlock(Request $request): bool
     {
-        $this->resetLocksAfterFork();
-
         $key = $this->getCacheKey($request);
 
         if (isset($this->locks[$key])) {
@@ -121,8 +113,6 @@ class Store implements StoreInterface
 
     public function isLocked(Request $request): bool
     {
-        $this->resetLocksAfterFork();
-
         $key = $this->getCacheKey($request);
 
         if (isset($this->locks[$key])) {
@@ -343,8 +333,6 @@ class Store implements StoreInterface
      */
     private function doPurge(string $url): bool
     {
-        $this->resetLocksAfterFork();
-
         $key = $this->getCacheKey(Request::create($url));
         if (isset($this->locks[$key])) {
             flock($this->locks[$key], \LOCK_UN);
@@ -376,8 +364,6 @@ class Store implements StoreInterface
      */
     private function save(string $key, string $data, bool $overwrite = true): bool
     {
-        $this->resetLocksAfterFork();
-
         $path = $this->getPath($key);
 
         if (!$overwrite && file_exists($path)) {
@@ -508,20 +494,5 @@ class Store implements StoreInterface
         }
 
         return new Response($content, $status, $headers);
-    }
-
-    private function resetLocksAfterFork(): void
-    {
-        if ($this->pid === $pid = getmypid()) {
-            return;
-        }
-
-        // Closing an inherited handle preserves the parent's lock.
-        foreach ($this->locks as $lock) {
-            fclose($lock);
-        }
-
-        $this->locks = [];
-        $this->pid = $pid;
     }
 }

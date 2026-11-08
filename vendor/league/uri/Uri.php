@@ -254,13 +254,7 @@ final class Uri implements Conditionable, UriInterface, Transformable
      */
     private function formatHost(?string $host): ?string
     {
-        if (null === $host) {
-            return null;
-        }
-
-        $formattedHost = HostRecord::from($host);
-
-        return str_contains($host, '%') ? $formattedHost->percentEncoded() : $formattedHost->toAscii();
+        return HostRecord::from($host)->toAscii();
     }
 
     /**
@@ -809,7 +803,7 @@ final class Uri implements Conditionable, UriInterface, Transformable
 
         $res = array_filter(
             array_filter(explode(';', $parameters), self::validateParameter(...)),
-            static fn (string $v): bool => '' !== $v,
+            static fn ($v): bool => null !== $v,
         );
         [] === $res || throw new SyntaxError('The path parameters `'.$parameters.'` is invalid.');
         if (!$isBinary) {

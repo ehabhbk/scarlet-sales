@@ -14,8 +14,6 @@ namespace Symfony\Component\VarDumper\Cloner;
 /**
  * Represents the main properties of a PHP variable.
  *
- * Stub classes meant to be extended should not declare private properties: they are not serialized with child classes.
- *
  * @author Nicolas Grekas <p@tchwork.com>
  */
 class Stub

@@ -107,8 +107,13 @@ final class UrlAutolinkParser implements InlineParserInterface
             return false;
         }
 
-        // Strip trailing punctuation; it's left on the cursor to be parsed as text
-        $url = \rtrim($matches[0], '?!.,:*_~');
+        $url = $matches[0];
+
+        // Does the URL end with punctuation that should be stripped?
+        if (\preg_match('/(.+?)([?!.,:*_~]+)$/', $url, $matches)) {
+            // Add the punctuation later
+            $url = $matches[1];
+        }
 
         // Does the URL end with something that looks like an entity reference?
         if (\preg_match('/(.+)(&[A-Za-z0-9]+;)$/', $url, $matches)) {

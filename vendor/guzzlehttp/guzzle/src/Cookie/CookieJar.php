@@ -175,7 +175,7 @@ class CookieJar implements CookieJarInterface
         }
 
         $maxAge = $cookie->getMaxAge();
-        if (($maxAge !== null && $maxAge <= 0) || $cookie->isExpired()) {
+        if ($maxAge !== null && $maxAge <= 0) {
             if ($cookie->getDomain() !== null) {
                 $this->removeCookie($cookie);
             }
@@ -195,13 +195,22 @@ class CookieJar implements CookieJarInterface
                 continue;
             }
 
-            // Replace the old cookie when its value, expiry or flags changed
-            if ($cookie->getValue() !== $c->getValue()
-                || $cookie->getExpires() !== $c->getExpires()
-                || $cookie->getDiscard() !== $c->getDiscard()
-                || $cookie->getSecure() !== $c->getSecure()
-                || $cookie->getHttpOnly() !== $c->getHttpOnly()
-            ) {
+            // The previously set cookie is a discard cookie and this one is
+            // not so allow the new cookie to be set
+            if (!$cookie->getDiscard() && $c->getDiscard()) {
+                unset($this->cookies[$i]);
+                continue;
+            }
+
+            // If the new cookie's expiration is further into the future, then
+            // replace the old cookie
+            if ($cookie->getExpires() > $c->getExpires()) {
+                unset($this->cookies[$i]);
+                continue;
+            }
+
+            // If the value has changed, we better change it
+            if ($cookie->getValue() !== $c->getValue()) {
                 unset($this->cookies[$i]);
                 continue;
             }
