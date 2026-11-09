@@ -7,6 +7,8 @@ use App\Http\Resources\UserResource;
 use App\Models\Employee;
 use App\Models\KitchenStation;
 use App\Models\User;
+use App\Models\UserWarehouse;
+use App\Models\Warehouse;
 use App\Services\CashierAccountService;
 use App\Support\PublicMediaUrl;
 use Illuminate\Http\Request;
@@ -196,6 +198,66 @@ class UserController extends Controller
         $user->delete();
 
         return response()->json(['message' => 'تم حذف المستخدم']);
+    }
+
+    public function userWarehouses(Request $request, User $user)
+    {
+        if ($user->restaurant_id !== auth()->user()->restaurant_id) {
+            abort(403);
+        }
+
+        $warehouses = Warehouse::where('restaurant_id', $user->restaurant_id)
+            ->orderBy('name')
+            ->get()
+            ->map(function ($w) use ($user) {
+                $pivot = $user->userWarehouses()->where('warehouse_id', $w->id)->first();
+                return [
+                    'id' => $w->id,
+                    'name' => $w->name,
+                    'type' => $w->type,
+                    'allow_sales' => (bool) $w->allow_sales,
+                    'can_sell' => $pivot ? (bool) $pivot->can_sell : false,
+                    'can_request_stock' => $pivot ? (bool) $pivot->can_request_stock : false,
+                    'can_approve_stock' => $pivot ? (bool) $pivot->can_approve_stock : false,
+                ];
+            });
+
+        return response()->json(['warehouses' => $warehouses]);
+    }
+
+    public function updateUserWarehouses(Request $request, User $user)
+    {
+        if ($user->restaurant_id !== auth()->user()->restaurant_id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'warehouses' => 'required|array',
+            'warehouses.*.id' => 'required|integer|exists:warehouses,id',
+            'warehouses.*.can_sell' => 'boolean',
+            'warehouses.*.can_request_stock' => 'boolean',
+            'warehouses.*.can_approve_stock' => 'boolean',
+        ]);
+
+        DB::transaction(function () use ($user, $validated) {
+            // Remove existing
+            UserWarehouse::where('user_id', $user->id)->delete();
+
+            foreach ($validated['warehouses'] as $w) {
+                $warehouse = Warehouse::where('restaurant_id', $user->restaurant_id)->find($w['id']);
+                if (!$warehouse) continue;
+
+                UserWarehouse::create([
+                    'user_id' => $user->id,
+                    'warehouse_id' => $warehouse->id,
+                    'can_sell' => $w['can_sell'] ?? false,
+                    'can_request_stock' => $w['can_request_stock'] ?? false,
+                    'can_approve_stock' => $w['can_approve_stock'] ?? false,
+                ]);
+            }
+        });
+
+        return response()->json(['message' => 'تم تحديث مخازن المستخدم']);
     }
 }
 

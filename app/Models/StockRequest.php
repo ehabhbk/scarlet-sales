@@ -23,12 +23,15 @@ class StockRequest extends Model
         'approved_at',
         'rejected_reason',
         'notes',
+        'received_by',
+        'received_at',
     ];
 
     protected $casts = [
         'requested_quantity' => 'decimal:3',
         'approved_quantity' => 'decimal:3',
         'approved_at' => 'datetime',
+        'received_at' => 'datetime',
     ];
 
     public function restaurant(): BelongsTo
@@ -59,5 +62,10 @@ class StockRequest extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function receiver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'received_by');
     }
 }

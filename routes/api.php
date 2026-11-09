@@ -39,6 +39,7 @@ Route::middleware(['auth:sanctum', 'audit'])->prefix('auth')->group(function () 
     Route::get('me', [\App\Http\Controllers\API\AuthController::class, 'me']);
     Route::post('avatar', [\App\Http\Controllers\API\AuthController::class, 'uploadAvatar']);
     Route::get('restaurant', [\App\Http\Controllers\API\AuthController::class, 'restaurant']);
+    Route::get('my-warehouses', [\App\Http\Controllers\API\AuthController::class, 'myWarehouses']);
     Route::middleware('permission:edit_settings')->group(function () {
         Route::put('restaurant', [\App\Http\Controllers\API\RestaurantController::class, 'update']);
         Route::post('restaurant/logo', [\App\Http\Controllers\API\RestaurantController::class, 'uploadLogo']);
@@ -83,6 +84,7 @@ Route::middleware(['auth:sanctum', 'audit', 'api.permission:stock_requests'])->g
     Route::post('stock-requests', [\App\Http\Controllers\API\StockRequestController::class, 'store']);
     Route::post('stock-requests/{stockRequest}/approve', [\App\Http\Controllers\API\StockRequestController::class, 'approve']);
     Route::post('stock-requests/{stockRequest}/reject', [\App\Http\Controllers\API\StockRequestController::class, 'reject']);
+    Route::post('stock-requests/{stockRequest}/receive', [\App\Http\Controllers\API\StockRequestController::class, 'receive']);
 });
 Route::middleware(['auth:sanctum', 'audit', 'api.permission:warehouse-stock'])->group(function () {
     Route::get('warehouse-stock', [\App\Http\Controllers\API\WarehouseController::class, 'stock']);
@@ -179,6 +181,8 @@ Route::middleware(['auth:sanctum', 'audit', 'api.permission:notifications'])->pr
 // Users & Roles & Permissions (admin only)
 Route::middleware(['auth:sanctum', 'audit'])->prefix('admin')->group(function () {
     Route::middleware('api.permission:users')->apiResource('users', \App\Http\Controllers\API\UserController::class);
+    Route::middleware('api.permission:users')->get('users/{user}/warehouses', [\App\Http\Controllers\API\UserController::class, 'userWarehouses']);
+    Route::middleware('api.permission:users')->post('users/{user}/warehouses', [\App\Http\Controllers\API\UserController::class, 'updateUserWarehouses']);
     Route::middleware('api.permission:users')->get('kitchen-stations', [\App\Http\Controllers\API\KitchenController::class, 'stationsForAssignment']);
     Route::middleware('api.permission:roles')->apiResource('roles', \App\Http\Controllers\API\RoleController::class);
     Route::middleware('api.permission:roles')->apiResource('permissions', \App\Http\Controllers\API\PermissionController::class);

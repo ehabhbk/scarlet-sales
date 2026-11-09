@@ -119,6 +119,15 @@ class OrderController extends Controller
                 (int) $restaurantId
             );
 
+            // Restrict selling to warehouses assigned to the user (can_sell)
+            $sellableWarehouseIds = $user->warehouses->wherePivot('can_sell', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+            if (count($sellableWarehouseIds) > 0 && $warehouseId && ! in_array($warehouseId, $sellableWarehouseIds)) {
+                throw new HttpResponseException(response()->json([
+                    'message' => 'غير مسموح لك البيع من هذا المخزن/نقطة البيع.',
+                    'errors' => ['warehouse_id' => ['غير مسموح لك البيع من هذا الموقع.']],
+                ], 403));
+            }
+
             // The shift is shared by all POS users: a single open shift per restaurant.
             $currentShift = Shift::where('restaurant_id', $restaurantId)
                 ->where('status', 'open')

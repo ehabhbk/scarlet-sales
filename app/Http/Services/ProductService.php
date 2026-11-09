@@ -31,6 +31,8 @@ class ProductService
                 'min_stock' => $data['min_stock'] ?? 0,
                 'sale_unit' => $data['sale_unit'] ?? null,
                 'purchase_unit' => $data['purchase_unit'] ?? null,
+                'sub_unit' => $data['sub_unit'] ?? null,
+                'conversion_factor' => $data['conversion_factor'] ?? 1,
                 'expiry_alert_days' => $data['expiry_alert_days'] ?? 30,
                 'low_stock_threshold' => $data['low_stock_threshold'] ?? 0,
                 'is_available' => $data['is_available'] ?? true,
@@ -87,8 +89,9 @@ class ProductService
         $product->update(array_intersect_key($data, array_flip([
             'category_id', 'kitchen_station_id', 'name', 'slug', 'sku', 'barcode', 'description',
             'image', 'sale_price', 'cost_price', 'tax_rate', 'track_inventory',
-            'current_stock', 'min_stock', 'sale_unit', 'purchase_unit', 'expiry_alert_days',
-            'low_stock_threshold', 'is_available', 'is_featured',
+            'current_stock', 'min_stock', 'sale_unit', 'purchase_unit', 'sub_unit',
+            'conversion_factor', 'expiry_alert_days', 'low_stock_threshold',
+            'is_available', 'is_featured',
             'is_best_seller', 'sort_order',
         ])));
 

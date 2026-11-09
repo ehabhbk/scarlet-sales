@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Models\UserWarehouse;
+use App\Models\Warehouse;
 use App\Services\CashierAccountService;
 use App\Support\PublicMediaUrl;
 use Illuminate\Http\Request;
@@ -130,5 +132,29 @@ class AuthController extends Controller
         $data['logo'] = PublicMediaUrl::make($restaurant->logo);
 
         return response()->json(['restaurant' => $data]);
+    }
+
+    public function myWarehouses(Request $request)
+    {
+        $user = $request->user();
+        $warehouses = Warehouse::where('restaurant_id', $user->restaurant_id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get()
+            ->map(function ($w) use ($user) {
+                $pivot = $user->userWarehouses()->where('warehouse_id', $w->id)->first();
+                return [
+                    'id' => $w->id,
+                    'name' => $w->name,
+                    'type' => $w->type,
+                    'allow_sales' => (bool) $w->allow_sales,
+                    'is_active' => (bool) $w->is_active,
+                    'is_default' => (bool) $w->is_default,
+                    'can_sell' => $pivot ? (bool) $pivot->can_sell : false,
+                    'can_request_stock' => $pivot ? (bool) $pivot->can_request_stock : false,
+                ];
+            });
+
+        return response()->json(['warehouses' => $warehouses]);
     }
 }

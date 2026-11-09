@@ -111,6 +111,17 @@ class User extends Authenticatable
         return $this->belongsTo(KitchenStation::class, 'kitchen_station_id');
     }
 
+    public function userWarehouses()
+    {
+        return $this->hasMany(UserWarehouse::class);
+    }
+
+    public function warehouses()
+    {
+        return $this->belongsToMany(Warehouse::class, 'user_warehouses')
+            ->withPivot(['can_sell', 'can_request_stock', 'can_approve_stock']);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

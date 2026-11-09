@@ -26,6 +26,8 @@ class ProductResource extends JsonResource
             'min_stock' => (int) $this->min_stock,
             'sale_unit' => $this->sale_unit,
             'purchase_unit' => $this->purchase_unit,
+            'sub_unit' => $this->sub_unit,
+            'conversion_factor' => (int) $this->conversion_factor,
             'expiry_alert_days' => (int) $this->expiry_alert_days,
             'low_stock_threshold' => (int) $this->low_stock_threshold,
             'total_stock' => $this->whenLoaded('batches', fn () => (float) $this->batches->sum('quantity')),

@@ -136,6 +136,8 @@ class ProductController extends Controller
             'min_stock' => 'sometimes|integer|min:0',
             'sale_unit' => 'sometimes|nullable|string|max:50',
             'purchase_unit' => 'sometimes|nullable|string|max:50',
+            'sub_unit' => 'sometimes|nullable|string|max:50',
+            'conversion_factor' => 'sometimes|nullable|integer|min:1',
             'expiry_alert_days' => 'sometimes|nullable|integer|min:0',
             'low_stock_threshold' => 'sometimes|nullable|integer|min:0',
             'is_featured' => 'sometimes|boolean',

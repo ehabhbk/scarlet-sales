@@ -19,7 +19,7 @@ class StockRequestController extends Controller
     {
         $restaurantId = $request->user()->restaurant_id;
         $query = StockRequest::where('restaurant_id', $restaurantId)
-            ->with(['fromWarehouse:id,name,type', 'toWarehouse:id,name,type', 'product:id,name,sku,barcode', 'requester:id,name', 'approver:id,name'])
+            ->with(['fromWarehouse:id,name,type', 'toWarehouse:id,name,type', 'product:id,name,sku,barcode', 'requester:id,name', 'approver:id,name', 'receiver:id,name'])
             ->orderByDesc('created_at');
 
         if ($request->filled('status')) {
@@ -41,14 +41,14 @@ class StockRequestController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        // authorize warehouses
         $from = Warehouse::where('restaurant_id', $restaurantId)->findOrFail($validated['from_warehouse_id']);
         $to = Warehouse::where('restaurant_id', $restaurantId)->findOrFail($validated['to_warehouse_id']);
         $product = Product::where('restaurant_id', $restaurantId)->findOrFail($validated['product_id']);
 
-        // sales source / type checks: from must be warehouse (storage), to must allow sales (store)
-        if ($from->type === 'pos' && ! $from->allow_sales) {
-            // ok
+        // User must be allowed to request stock from the source warehouse
+        $requestableWarehouseIds = $request->user()->warehouses->wherePivot('can_request_stock', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if (count($requestableWarehouseIds) > 0 && ! in_array((int) $from->id, $requestableWarehouseIds)) {
+            abort(403, 'غير مسموح لك الطلب من هذا المخزن.');
         }
 
         $sr = StockRequest::create([
@@ -78,26 +78,44 @@ class StockRequestController extends Controller
             return response()->json(['message' => 'الكمية المعتمدة يجب أن تكون أكبر من صفر'], 422);
         }
 
-        $product = Product::findOrFail($stockRequest->product_id);
-
-        $this->stock->transfer(
-            (int) $stockRequest->restaurant_id,
-            (int) $stockRequest->from_warehouse_id,
-            (int) $stockRequest->to_warehouse_id,
-            $product,
-            $approvedQty,
-            (int) $request->user()->id,
-            'stock_request'
-        );
-
         $stockRequest->update([
-            'status' => 'completed',
+            'status' => 'approved',
             'approved_quantity' => $approvedQty,
             'approved_by' => $request->user()->id,
             'approved_at' => now(),
         ]);
 
         return response()->json(['data' => $stockRequest->fresh(['fromWarehouse', 'toWarehouse', 'product', 'requester', 'approver'])]);
+    }
+
+    public function receive(Request $request, StockRequest $stockRequest)
+    {
+        $this->authorizeRestaurant($stockRequest, $request);
+
+        if ($stockRequest->status !== 'approved') {
+            return response()->json(['message' => 'الطلب ليس في حالة معتمدة'], 422);
+        }
+
+        $product = Product::findOrFail($stockRequest->product_id);
+
+        // Transfer stock from warehouse to POS upon receipt confirmation
+        $this->stock->transfer(
+            (int) $stockRequest->restaurant_id,
+            (int) $stockRequest->from_warehouse_id,
+            (int) $stockRequest->to_warehouse_id,
+            $product,
+            (float) $stockRequest->approved_quantity,
+            (int) $request->user()->id,
+            'stock_request_receive'
+        );
+
+        $stockRequest->update([
+            'status' => 'completed',
+            'received_by' => $request->user()->id,
+            'received_at' => now(),
+        ]);
+
+        return response()->json(['data' => $stockRequest->fresh(['fromWarehouse', 'toWarehouse', 'product', 'requester', 'approver', 'receiver'])]);
     }
 
     public function reject(Request $request, StockRequest $stockRequest)

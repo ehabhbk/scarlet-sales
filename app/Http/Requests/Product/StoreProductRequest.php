@@ -38,6 +38,8 @@ class StoreProductRequest extends FormRequest
             'min_stock' => 'nullable|integer|min:0',
             'sale_unit' => 'nullable|string|max:50',
             'purchase_unit' => 'nullable|string|max:50',
+            'sub_unit' => 'nullable|string|max:50',
+            'conversion_factor' => 'nullable|integer|min:1',
             'expiry_alert_days' => 'nullable|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
             'is_available' => 'boolean',

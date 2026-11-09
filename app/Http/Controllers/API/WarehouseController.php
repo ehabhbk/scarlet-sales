@@ -28,10 +28,16 @@ class WarehouseController extends Controller
     {
         $restaurantId = $request->user()->restaurant_id;
 
-        $warehouses = Warehouse::where('restaurant_id', $restaurantId)
+        $query = Warehouse::where('restaurant_id', $restaurantId)
             ->with(['batches' => fn ($query) => $query->select(
                 'id', 'warehouse_id', 'product_id', 'quantity', 'cost_price', 'expiry_date'
-            )])
+            )]);
+
+        if ($request->filled('type')) {
+            $query->where('type', $request->string('type'));
+        }
+
+        $warehouses = $query
             ->orderByDesc('is_default')
             ->orderBy('name')
             ->get()
@@ -538,9 +544,9 @@ class WarehouseController extends Controller
                     ->where(fn ($query) => $query->where('restaurant_id', $restaurantId))
                     ->ignore($ignoreId),
             ],
-            'type' => 'nullable|in:store,pos,both',
+            'type' => 'nullable|in:store,warehouse,both',
             'allow_sales' => 'boolean',
-            'pos_sale_source' => 'nullable|in:store,pos,both',
+            'pos_sale_source' => 'nullable|in:store,warehouse,both',
             'address' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:50',
             'is_default' => 'boolean',
