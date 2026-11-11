@@ -247,7 +247,11 @@ class PurchaseController extends Controller
             'items.*.inventory_item_id' => 'nullable|exists:inventory_items,id',
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.warehouse_id' => 'nullable|integer',
-            'items.*.quantity' => 'required|numeric|min:0',
+            'items.*.main_quantity' => 'required|numeric|min:0',
+            'items.*.sub_quantity_per_main' => 'nullable|numeric|min:0',
+            'items.*.unit_name' => 'nullable|string|max:50',
+            'items.*.sub_unit_name' => 'nullable|string|max:50',
+            'items.*.quantity' => 'nullable|numeric|min:0',
             'items.*.unit_cost' => 'required|numeric|min:0',
             'items.*.expiry_date' => 'nullable|date',
             'items.*.batch_number' => 'nullable|string|max:100',
@@ -262,7 +266,11 @@ class PurchaseController extends Controller
 
             $subtotal = 0;
             foreach ($validated['items'] as $it) {
-                $subtotal += (float) $it['quantity'] * (float) $it['unit_cost'];
+                $mainQty = (float) ($it['main_quantity'] ?? $it['quantity'] ?? 0);
+                $subQtyPerMain = (float) ($it['sub_quantity_per_main'] ?? 0);
+                $unitCost = (float) $it['unit_cost'];
+                // التكلفة تُحسب على الأساس من الكمية الرئيسية
+                $subtotal += $mainQty * $unitCost;
             }
             $taxAmount = round((float) ($validated['tax_amount'] ?? 0), 2);
             $totalAmount = round((float) ($validated['total_amount'] ?? ($subtotal + $taxAmount)), 2);
@@ -327,14 +335,24 @@ class PurchaseController extends Controller
                     }
                 }
 
+                $mainQty = (float) ($it['main_quantity'] ?? $it['quantity'] ?? 0);
+                $subQtyPerMain = (float) ($it['sub_quantity_per_main'] ?? 0);
+                $unitCost = (float) $it['unit_cost'];
+                // الكمية الإجمالية بالوحدة الأساسية للتخزين
+                $totalQty = $mainQty;
+
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'inventory_item_id' => $inventoryItemId,
                     'product_id' => $productId,
                     'warehouse_id' => $warehouseId,
-                    'quantity' => $it['quantity'],
-                    'unit_cost' => $it['unit_cost'],
-                    'total_cost' => (float) $it['quantity'] * (float) $it['unit_cost'],
+                    'quantity' => $totalQty,
+                    'unit_cost' => $unitCost,
+                    'total_cost' => round($mainQty * $unitCost, 4),
+                    'main_quantity' => $mainQty,
+                    'sub_quantity_per_main' => $subQtyPerMain > 0 ? $subQtyPerMain : null,
+                    'unit_name' => $it['unit_name'] ?? null,
+                    'sub_unit_name' => $it['sub_unit_name'] ?? null,
                     'expiry_date' => $it['expiry_date'] ?? null,
                     'batch_number' => $it['batch_number'] ?? null,
                 ]);
@@ -346,7 +364,8 @@ class PurchaseController extends Controller
                     $inventoryItemId = $it['inventory_item_id'] ?? null;
                     $productId = $it['product_id'] ?? null;
                     $warehouseId = $it['warehouse_id'] ?? null;
-                    $qty = (float) $it['quantity'];
+                    // الكمية المستلمة هي الكمية الرئيسية (يتم تخزينها بالوحدة الأساسية)
+                    $qty = (float) ($it['main_quantity'] ?? $it['quantity'] ?? 0);
                     $cost = (float) $it['unit_cost'];
 
                     if ($productId && $warehouseId) {

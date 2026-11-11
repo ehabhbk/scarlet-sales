@@ -16,6 +16,10 @@ class OrderItem extends Model
         'product_id',
         'size_id',
         'quantity',
+        'unit_type',
+        'unit_name',
+        'conversion_factor',
+        'base_quantity',
         'unit_price',
         'discount_amount',
         'tax_amount',
@@ -31,6 +35,8 @@ class OrderItem extends Model
         'discount_amount' => 'decimal:4',
         'tax_amount' => 'decimal:4',
         'total_price' => 'decimal:4',
+        'conversion_factor' => 'decimal:4',
+        'base_quantity' => 'decimal:4',
         'sort_order' => 'integer',
     ];
 

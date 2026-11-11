@@ -102,6 +102,10 @@ class OrderController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.size_id' => 'nullable|exists:product_sizes,id',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_type' => 'nullable|in:main,sub',
+            'items.*.unit_name' => 'nullable|string|max:50',
+            'items.*.conversion_factor' => 'nullable|numeric|min:0.001',
+            'items.*.base_quantity' => 'nullable|numeric|min:0',
             'items.*.notes' => 'nullable|string',
             'items.*.modifier_options' => 'nullable|array',
             'items.*.modifier_options.*.modifier_id' => 'required|exists:product_modifiers,id',
@@ -237,7 +241,25 @@ class OrderController extends Controller
             foreach ($validated['items'] as $itemData) {
                 $product = Product::where('restaurant_id', $restaurantId)
                     ->findOrFail($itemData['product_id']);
-                $unitPrice = $this->calculateItemPrice($product, $itemData);
+
+                // Determine unit type and price
+                $unitType = $itemData['unit_type'] ?? 'main';
+                $conversionFactor = (float) ($itemData['conversion_factor'] ?? $product->conversion_factor ?? 1);
+                $subUnitPrice = (float) ($itemData['sub_unit_price'] ?? $product->sub_unit_price ?? 0);
+
+                if ($unitType === 'sub' && $product->sub_unit && $conversionFactor > 0) {
+                    // Price per sub-unit: use sub_unit_price if set, otherwise sale_price / conversion_factor
+                    $unitPrice = $subUnitPrice > 0 ? $subUnitPrice : (($this->calculateItemPrice($product, $itemData)) / $conversionFactor);
+                    // Stock deduction in main units: quantity / conversion_factor
+                    $stockDeductionQty = (float) $itemData['quantity'] / $conversionFactor;
+                    $baseQuantity = (float) $itemData['quantity']; // stored in sub-units
+                } else {
+                    $unitPrice = $this->calculateItemPrice($product, $itemData);
+                    $stockDeductionQty = (float) $itemData['quantity'];
+                    $baseQuantity = (float) $itemData['quantity'] * $conversionFactor; // stored in sub-units
+                    $unitType = 'main';
+                }
+
                 $itemDiscount = 0;
                 $itemTax = 0;
                 $itemTotal = ($unitPrice * $itemData['quantity']) - $itemDiscount + $itemTax;
@@ -247,6 +269,10 @@ class OrderController extends Controller
                     'product_id' => $itemData['product_id'],
                     'size_id' => $itemData['size_id'] ?? null,
                     'quantity' => $itemData['quantity'],
+                    'unit_type' => $unitType,
+                    'unit_name' => $itemData['unit_name'] ?? ($unitType === 'sub' ? $product->sub_unit : $product->sale_unit),
+                    'conversion_factor' => $conversionFactor,
+                    'base_quantity' => $baseQuantity,
                     'unit_price' => $unitPrice,
                     'discount_amount' => $itemDiscount,
                     'tax_amount' => $itemTax,
@@ -275,20 +301,20 @@ class OrderController extends Controller
                     }
                 }
 
-                // Deduct warehouse stock (batches, FEFO) and legacy recipe ingredients.
+                // Deduct warehouse stock (batches, FEFO) using main-unit quantity.
                 $this->stock->deductFefo(
                     (int) $restaurantId,
                     $warehouseId,
                     $product,
-                    (float) $itemData['quantity'],
+                    $stockDeductionQty,
                     (int) $user->id,
                     'order',
                     (int) $order->id
                 );
-                $this->deductInventoryForProduct($product->id, $itemData['quantity'], $user->id, $order->id);
+                $this->deductInventoryForProduct($product->id, $stockDeductionQty, $user->id, $order->id);
 
-                // Keep the product's sales counter in sync for dashboards/reports.
-                $product->increment('sales_count', $itemData['quantity']);
+                // Keep the product's sales counter in sync for dashboards/reports (count in sub-units sold).
+                $product->increment('sales_count', (int) round($baseQuantity));
             }
 
             // Update table status
@@ -378,6 +404,10 @@ class OrderController extends Controller
             'items.*.product_id' => 'required_with:items|integer|exists:products,id',
             'items.*.size_id' => 'nullable|integer|exists:product_sizes,id',
             'items.*.quantity' => 'required_with:items|integer|min:1',
+            'items.*.unit_type' => 'nullable|in:main,sub',
+            'items.*.unit_name' => 'nullable|string|max:50',
+            'items.*.conversion_factor' => 'nullable|numeric|min:0.001',
+            'items.*.base_quantity' => 'nullable|numeric|min:0',
             'items.*.notes' => 'nullable|string',
             'items.*.modifier_options' => 'nullable|array',
             'items.*.modifier_options.*.modifier_id' => 'required|integer|exists:product_modifiers,id',
@@ -446,7 +476,23 @@ class OrderController extends Controller
                     $product = Product::where('restaurant_id', $order->restaurant_id)
                         ->where('is_available', true)
                         ->findOrFail($itemData['product_id']);
-                    $unitPrice = $this->calculateItemPrice($product, $itemData);
+
+                    // Determine unit type and price
+                    $unitType = $itemData['unit_type'] ?? 'main';
+                    $conversionFactor = (float) ($itemData['conversion_factor'] ?? $product->conversion_factor ?? 1);
+                    $subUnitPrice = (float) ($itemData['sub_unit_price'] ?? $product->sub_unit_price ?? 0);
+
+                    if ($unitType === 'sub' && $product->sub_unit && $conversionFactor > 0) {
+                        $unitPrice = $subUnitPrice > 0 ? $subUnitPrice : (($this->calculateItemPrice($product, $itemData)) / $conversionFactor);
+                        $stockDeductionQty = (float) $itemData['quantity'] / $conversionFactor;
+                        $baseQuantity = (float) $itemData['quantity'];
+                    } else {
+                        $unitPrice = $this->calculateItemPrice($product, $itemData);
+                        $stockDeductionQty = (float) $itemData['quantity'];
+                        $baseQuantity = (float) $itemData['quantity'] * $conversionFactor;
+                        $unitType = 'main';
+                    }
+
                     $quantity = $itemData['quantity'];
                     $subtotal += $unitPrice * $quantity;
 
@@ -454,6 +500,10 @@ class OrderController extends Controller
                         'product_id' => $product->id,
                         'size_id' => $itemData['size_id'] ?? null,
                         'quantity' => $quantity,
+                        'unit_type' => $unitType,
+                        'unit_name' => $itemData['unit_name'] ?? ($unitType === 'sub' ? $product->sub_unit : $product->sale_unit),
+                        'conversion_factor' => $conversionFactor,
+                        'base_quantity' => $baseQuantity,
                         'unit_price' => $unitPrice,
                         'discount_amount' => 0,
                         'tax_amount' => 0,
@@ -483,13 +533,13 @@ class OrderController extends Controller
                         (int) $order->restaurant_id,
                         $order->warehouse_id ? (int) $order->warehouse_id : null,
                         $product,
-                        (float) $quantity,
+                        $stockDeductionQty,
                         (int) $user->id,
                         'order',
                         (int) $order->id
                     );
-                    $this->deductInventoryForProduct($product->id, $quantity, $user->id, $order->id);
-                    $product->increment('sales_count', $quantity);
+                    $this->deductInventoryForProduct($product->id, $stockDeductionQty, $user->id, $order->id);
+                    $product->increment('sales_count', (int) round($baseQuantity));
                 }
 
                 $discount = min($subtotal, $fixedDiscount + ($subtotal * $discountPercent / 100));
@@ -649,10 +699,13 @@ class OrderController extends Controller
         if ($order->status !== 'cancelled' && $order->payment_status !== 'refunded') {
             $this->stock->restoreOrderStock((int) $order->id, null, (int) auth()->id());
             foreach ($order->items as $item) {
-                $this->restoreInventoryForProduct($item->product_id, $item->quantity, auth()->id(), $order->id);
+                $restoreQty = ($item->unit_type === 'sub' && $item->conversion_factor > 0)
+                    ? (float) $item->quantity / (float) $item->conversion_factor
+                    : (float) $item->quantity;
+                $this->restoreInventoryForProduct($item->product_id, $restoreQty, auth()->id(), $order->id);
                 Product::whereKey($item->product_id)
-                    ->where('sales_count', '>=', $item->quantity)
-                    ->decrement('sales_count', $item->quantity);
+                    ->where('sales_count', '>=', (int) round($item->base_quantity ?? $item->quantity))
+                    ->decrement('sales_count', (int) round($item->base_quantity ?? $item->quantity));
             }
         }
         if ($order->table_id) {
@@ -693,10 +746,13 @@ class OrderController extends Controller
                 if ($oldStatus !== 'cancelled') {
                     $this->stock->restoreOrderStock((int) $order->id, null, (int) $user->id);
                     foreach ($order->items as $item) {
-                        $this->restoreInventoryForProduct($item->product_id, $item->quantity, $user->id, $order->id);
+                        $restoreQty = ($item->unit_type === 'sub' && $item->conversion_factor > 0)
+                            ? (float) $item->quantity / (float) $item->conversion_factor
+                            : (float) $item->quantity;
+                        $this->restoreInventoryForProduct($item->product_id, $restoreQty, $user->id, $order->id);
                         Product::where('id', $item->product_id)
-                            ->where('sales_count', '>=', $item->quantity)
-                            ->decrement('sales_count', $item->quantity);
+                            ->where('sales_count', '>=', (int) round($item->base_quantity ?? $item->quantity))
+                            ->decrement('sales_count', (int) round($item->base_quantity ?? $item->quantity));
                     }
                     if ($order->table_id) {
                         Table::where('id', $order->table_id)->update(['status' => 'available']);
@@ -762,10 +818,13 @@ class OrderController extends Controller
             // Restore warehouse stock and legacy recipe inventory.
             $this->stock->restoreOrderStock((int) $order->id, null, (int) $user->id);
             foreach ($order->items as $item) {
-                $this->restoreInventoryForProduct($item->product_id, $item->quantity, $user->id, $order->id);
+                $restoreQty = ($item->unit_type === 'sub' && $item->conversion_factor > 0)
+                    ? (float) $item->quantity / (float) $item->conversion_factor
+                    : (float) $item->quantity;
+                $this->restoreInventoryForProduct($item->product_id, $restoreQty, $user->id, $order->id);
                 Product::where('id', $item->product_id)
-                    ->where('sales_count', '>=', $item->quantity)
-                    ->decrement('sales_count', $item->quantity);
+                    ->where('sales_count', '>=', (int) round($item->base_quantity ?? $item->quantity))
+                    ->decrement('sales_count', (int) round($item->base_quantity ?? $item->quantity));
             }
 
             // Free table

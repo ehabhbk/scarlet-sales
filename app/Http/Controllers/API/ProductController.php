@@ -136,8 +136,10 @@ class ProductController extends Controller
             'min_stock' => 'sometimes|integer|min:0',
             'sale_unit' => 'sometimes|nullable|string|max:50',
             'purchase_unit' => 'sometimes|nullable|string|max:50',
+            'main_unit' => 'sometimes|nullable|string|max:50',
             'sub_unit' => 'sometimes|nullable|string|max:50',
-            'conversion_factor' => 'sometimes|nullable|integer|min:1',
+            'conversion_factor' => 'sometimes|nullable|numeric|min:0.001',
+            'sub_unit_price' => 'sometimes|nullable|numeric|min:0',
             'expiry_alert_days' => 'sometimes|nullable|integer|min:0',
             'low_stock_threshold' => 'sometimes|nullable|integer|min:0',
             'is_featured' => 'sometimes|boolean',
@@ -196,6 +198,10 @@ class ProductController extends Controller
                 $product->setAttribute('warehouse_id', $warehouseId);
                 $product->setAttribute('stock', $stock);
                 $product->setAttribute('in_stock', ! $product->track_inventory || $stock > 0);
+                $product->setAttribute('main_unit', $product->main_unit);
+                $product->setAttribute('sub_unit', $product->sub_unit);
+                $product->setAttribute('conversion_factor', (float) $product->conversion_factor);
+                $product->setAttribute('sub_unit_price', (float) $product->sub_unit_price);
                 $product->setAttribute(
                     'nearest_expiry',
                     $product->batches
