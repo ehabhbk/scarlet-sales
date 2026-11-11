@@ -195,6 +195,23 @@ class ProductController extends Controller
                 $product->image = PublicMediaUrl::make($product->image);
                 $product->loadMissing('kitchenStation');
 
+                // Per-warehouse overrides (sale price, min stock, expiry alert) take
+                // precedence over the product-level defaults when a batch carries them.
+                $overrideBatch = $product->batches->first(
+                    fn ($b) => $b->sale_price !== null || $b->min_stock !== null || $b->expiry_alert_days !== null
+                ) ?? $product->batches->first();
+                if ($overrideBatch) {
+                    if ($overrideBatch->sale_price !== null) {
+                        $product->sale_price = (float) $overrideBatch->sale_price;
+                    }
+                    if ($overrideBatch->min_stock !== null) {
+                        $product->min_stock = (int) $overrideBatch->min_stock;
+                    }
+                    if ($overrideBatch->expiry_alert_days !== null) {
+                        $product->expiry_alert_days = (int) $overrideBatch->expiry_alert_days;
+                    }
+                }
+
                 $product->setAttribute('warehouse_id', $warehouseId);
                 $product->setAttribute('stock', $stock);
                 $product->setAttribute('in_stock', ! $product->track_inventory || $stock > 0);

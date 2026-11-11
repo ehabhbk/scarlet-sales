@@ -37,20 +37,28 @@ return new class extends Migration
             'name' => 'Storekeeper',
             'guard_name' => 'sanctum',
         ]);
-        $storekeeper->syncPermissions([
+        $storekeeperPermissions = [
             'view_warehouses', 'view_products', 'view_inventory', 'create_stock_requests', 'view_stock_requests',
             'create_orders', 'view_pos', 'view_orders',
-        ]);
+        ];
+        foreach ($storekeeperPermissions as $permissionName) {
+            Permission::firstOrCreate(['name' => $permissionName, 'guard_name' => 'sanctum']);
+        }
+        $storekeeper->syncPermissions($storekeeperPermissions);
 
         $warehouseSupervisor = Role::firstOrCreate([
             'name' => 'Warehouse Supervisor',
             'guard_name' => 'sanctum',
         ]);
-        $warehouseSupervisor->syncPermissions([
+        $warehouseSupervisorPermissions = [
             'view_warehouses', 'create_warehouses', 'edit_warehouses', 'delete_warehouses', 'manage_stock',
             'view_products', 'view_inventory', 'create_stock_requests', 'view_stock_requests', 'approve_stock_requests', 'reject_stock_requests',
             'view_orders', 'create_orders', 'view_pos',
-        ]);
+        ];
+        foreach ($warehouseSupervisorPermissions as $permissionName) {
+            Permission::firstOrCreate(['name' => $permissionName, 'guard_name' => 'sanctum']);
+        }
+        $warehouseSupervisor->syncPermissions($warehouseSupervisorPermissions);
     }
 
     public function down(): void

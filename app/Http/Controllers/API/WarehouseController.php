@@ -33,6 +33,13 @@ class WarehouseController extends Controller
                 'id', 'warehouse_id', 'product_id', 'quantity', 'cost_price', 'expiry_date'
             )]);
 
+        // Users assigned to specific locations only see those locations.
+        // Admins and unassigned users remain unrestricted.
+        $assignedIds = $this->assignedWarehouseIds($request->user());
+        if ($assignedIds !== null) {
+            $query->whereIn('id', $assignedIds);
+        }
+
         if ($request->filled('type')) {
             $query->where('type', $request->string('type'));
         }
@@ -52,11 +59,88 @@ class WarehouseController extends Controller
 
         $warehouse->load(['batches' => fn ($query) => $query
             ->where('quantity', '>', 0)
-            ->with('product:id,name,sku,barcode')]);
+            ->with([
+                'product:id,name,sku,barcode,image,category_id,sale_price,cost_price,min_stock,main_unit,sub_unit,conversion_factor',
+                'product.category:id,name,color',
+                'supplier:id,name',
+            ])]);
 
         return response()->json([
             'warehouse' => $this->warehousePayload($warehouse),
             'batches' => $warehouse->batches,
+        ]);
+    }
+
+    /**
+     * Update a product batch from the warehouse/store detail page.
+     */
+    public function updateBatch(Request $request, Warehouse $warehouse, ProductBatch $batch)
+    {
+        $this->authorizeWarehouse($warehouse);
+
+        if ((int) $batch->warehouse_id !== (int) $warehouse->id) {
+            abort(404, 'الدفعة لا تنتمي إلى هذا الموقع.');
+        }
+
+        abort_unless($request->user()->can('manage_stock'), 403, 'غير مسموح لك بتعديل المخزون.');
+
+        $validated = $request->validate([
+            'quantity' => 'sometimes|numeric|min:0',
+            'cost_price' => 'sometimes|numeric|min:0',
+            'expiry_date' => 'sometimes|nullable|date',
+            'batch_number' => 'sometimes|nullable|string|max:100',
+            'sale_price' => 'sometimes|numeric|min:0',
+            'min_stock' => 'sometimes|nullable|integer|min:0',
+            'expiry_alert_days' => 'sometimes|nullable|integer|min:0',
+            'conversion_factor' => 'sometimes|nullable|numeric|min:0.001',
+            'main_unit' => 'sometimes|nullable|string|max:50',
+            'sub_unit' => 'sometimes|nullable|string|max:50',
+            'notes' => 'sometimes|nullable|string',
+        ]);
+
+        $batchData = [];
+        foreach (['quantity', 'cost_price', 'expiry_date', 'batch_number', 'notes', 'sale_price', 'min_stock', 'expiry_alert_days'] as $key) {
+            if (array_key_exists($key, $validated)) {
+                $batchData[$key] = $validated[$key];
+            }
+        }
+
+        DB::transaction(function () use ($batch, $validated, $batchData, $request) {
+            $this->stock->updateBatch(
+                (int) $batch->id,
+                $batchData,
+                (int) $request->user()->id
+            );
+
+            if (array_key_exists('sale_price', $validated)
+                || array_key_exists('conversion_factor', $validated)
+                || array_key_exists('main_unit', $validated)
+                || array_key_exists('sub_unit', $validated)) {
+                $productData = [];
+                if (array_key_exists('sale_price', $validated)) {
+                    $productData['sale_price'] = $validated['sale_price'];
+                }
+                if (array_key_exists('conversion_factor', $validated) && $validated['conversion_factor'] !== null) {
+                    $productData['conversion_factor'] = $validated['conversion_factor'];
+                }
+                if (array_key_exists('main_unit', $validated)) {
+                    $productData['main_unit'] = $validated['main_unit'] ?: null;
+                }
+                if (array_key_exists('sub_unit', $validated)) {
+                    $productData['sub_unit'] = $validated['sub_unit'] ?: null;
+                }
+                if ($productData !== []) {
+                    Product::whereKey($batch->product_id)->update($productData);
+                }
+            }
+        });
+
+        return response()->json([
+            'batch' => $batch->fresh()->load([
+                'product:id,name,sku,barcode,image,category_id,sale_price,cost_price,min_stock,main_unit,sub_unit,conversion_factor',
+                'product.category:id,name,color',
+            ]),
+            'message' => 'تم تحديث بيانات المنتج بنجاح',
         ]);
     }
 
@@ -557,9 +641,32 @@ class WarehouseController extends Controller
 
     protected function authorizeWarehouse(Warehouse $warehouse): void
     {
-        if ((int) $warehouse->restaurant_id !== (int) auth()->user()->restaurant_id) {
+        $user = auth()->user();
+        if ((int) $warehouse->restaurant_id !== (int) $user->restaurant_id) {
             abort(403, 'غير مسموح بالوصول إلى هذا المخزن');
         }
+
+        $assignedIds = $this->assignedWarehouseIds($user);
+        if ($assignedIds !== null && ! in_array((int) $warehouse->id, $assignedIds, true)) {
+            abort(403, 'غير مسموح بالوصول إلى هذا المخزن');
+        }
+    }
+
+    /**
+     * Warehouse ids the user is explicitly assigned to, or null when the user
+     * is unrestricted (admin or no assignments at all).
+     *
+     * @return array<int>|null
+     */
+    protected function assignedWarehouseIds($user): ?array
+    {
+        if ($user->hasAnyRole(['admin', 'Super Admin', 'Admin'], 'sanctum')) {
+            return null;
+        }
+
+        $ids = $user->warehouses()->pluck('warehouses.id')->map(fn ($id) => (int) $id)->all();
+
+        return count($ids) > 0 ? $ids : null;
     }
 
     /**

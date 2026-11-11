@@ -17,10 +17,21 @@ class StockRequestController extends Controller
 
     public function index(Request $request)
     {
-        $restaurantId = $request->user()->restaurant_id;
+        $user = $request->user();
+        $restaurantId = $user->restaurant_id;
         $query = StockRequest::where('restaurant_id', $restaurantId)
             ->with(['fromWarehouse:id,name,type', 'toWarehouse:id,name,type', 'product:id,name,sku,barcode', 'requester:id,name', 'approver:id,name', 'receiver:id,name'])
             ->orderByDesc('created_at');
+
+        // Users with explicit assignments only see requests touching their
+        // warehouses/stores. Admins and unassigned users stay unrestricted.
+        $assignedIds = $this->assignedWarehouseIds($user);
+        if ($assignedIds !== null) {
+            $query->where(function ($q) use ($assignedIds) {
+                $q->whereIn('from_warehouse_id', $assignedIds)
+                    ->orWhereIn('to_warehouse_id', $assignedIds);
+            });
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
@@ -46,9 +57,11 @@ class StockRequestController extends Controller
         $product = Product::where('restaurant_id', $restaurantId)->findOrFail($validated['product_id']);
 
         // User must be allowed to request stock from the source warehouse
-        $requestableWarehouseIds = $request->user()->warehouses->wherePivot('can_request_stock', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
-        if (count($requestableWarehouseIds) > 0 && ! in_array((int) $from->id, $requestableWarehouseIds)) {
+        if (! $this->canRequestFrom($request->user(), (int) $from->id)) {
             abort(403, 'غير مسموح لك الطلب من هذا المخزن.');
+        }
+        if (! $this->canAccessWarehouse($request->user(), (int) $to->id)) {
+            abort(403, 'غير مسموح لك استلام مخزون لهذا الموقع.');
         }
 
         $sr = StockRequest::create([
@@ -68,6 +81,10 @@ class StockRequestController extends Controller
     public function approve(Request $request, StockRequest $stockRequest)
     {
         $this->authorizeRestaurant($stockRequest, $request);
+
+        if (! $this->canApproveFor($request->user(), (int) $stockRequest->from_warehouse_id)) {
+            abort(403, 'غير مسموح لك اعتماد طلبات هذا المخزن.');
+        }
 
         if ($stockRequest->status !== 'pending') {
             return response()->json(['message' => 'الطلب ليس في حالة معلقة'], 422);
@@ -91,6 +108,13 @@ class StockRequestController extends Controller
     public function receive(Request $request, StockRequest $stockRequest)
     {
         $this->authorizeRestaurant($stockRequest, $request);
+
+        $user = $request->user();
+        $canReceive = $this->canAccessWarehouse($user, (int) $stockRequest->to_warehouse_id)
+            || $this->canApproveFor($user, (int) $stockRequest->from_warehouse_id);
+        if (! $canReceive) {
+            abort(403, 'غير مسموح لك استلام هذا الطلب.');
+        }
 
         if ($stockRequest->status !== 'approved') {
             return response()->json(['message' => 'الطلب ليس في حالة معتمدة'], 422);
@@ -122,6 +146,10 @@ class StockRequestController extends Controller
     {
         $this->authorizeRestaurant($stockRequest, $request);
 
+        if (! $this->canApproveFor($request->user(), (int) $stockRequest->from_warehouse_id)) {
+            abort(403, 'غير مسموح لك رفض طلبات هذا المخزن.');
+        }
+
         if ($stockRequest->status !== 'pending') {
             return response()->json(['message' => 'الطلب ليس في حالة معلقة'], 422);
         }
@@ -140,5 +168,61 @@ class StockRequestController extends Controller
         if ((int) $sr->restaurant_id !== (int) $request->user()->restaurant_id) {
             abort(403);
         }
+    }
+
+    /**
+     * Warehouse ids the user is explicitly assigned to, or null when the user
+     * is unrestricted (admin or no assignments at all).
+     *
+     * @return array<int>|null
+     */
+    protected function assignedWarehouseIds($user): ?array
+    {
+        if ($user->hasAnyRole(['admin', 'Super Admin', 'Admin'], 'sanctum')) {
+            return null;
+        }
+
+        $ids = $user->warehouses()->pluck('warehouses.id')->map(fn ($id) => (int) $id)->all();
+
+        return count($ids) > 0 ? $ids : null;
+    }
+
+    protected function canRequestFrom($user, int $warehouseId): bool
+    {
+        $assignedIds = $this->assignedWarehouseIds($user);
+        if ($assignedIds === null) {
+            return true;
+        }
+        if (! in_array($warehouseId, $assignedIds, true)) {
+            return false;
+        }
+
+        return (bool) $user->warehouses()
+            ->where('warehouses.id', $warehouseId)
+            ->wherePivot('can_request_stock', true)
+            ->exists();
+    }
+
+    protected function canApproveFor($user, int $warehouseId): bool
+    {
+        $assignedIds = $this->assignedWarehouseIds($user);
+        if ($assignedIds === null) {
+            return true;
+        }
+        if (! in_array($warehouseId, $assignedIds, true)) {
+            return false;
+        }
+
+        return (bool) $user->warehouses()
+            ->where('warehouses.id', $warehouseId)
+            ->wherePivot('can_approve_stock', true)
+            ->exists();
+    }
+
+    protected function canAccessWarehouse($user, int $warehouseId): bool
+    {
+        $assignedIds = $this->assignedWarehouseIds($user);
+
+        return $assignedIds === null || in_array($warehouseId, $assignedIds, true);
     }
 }

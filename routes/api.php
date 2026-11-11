@@ -79,6 +79,7 @@ Route::middleware(['auth:sanctum', 'audit', 'api.permission:products'])->apiReso
 // Warehouses, product batches and live stock alerts
 Route::middleware(['auth:sanctum', 'audit', 'api.permission:warehouses'])->get('product-alerts', [\App\Http\Controllers\API\WarehouseController::class, 'alerts']);
 Route::middleware(['auth:sanctum', 'audit', 'api.permission:warehouses'])->apiResource('warehouses', \App\Http\Controllers\API\WarehouseController::class);
+Route::middleware(['auth:sanctum', 'audit', 'api.permission:warehouses'])->put('warehouses/{warehouse}/batches/{batch}', [\App\Http\Controllers\API\WarehouseController::class, 'updateBatch']);
 Route::middleware(['auth:sanctum', 'audit', 'api.permission:stock_requests'])->group(function () {
     Route::get('stock-requests', [\App\Http\Controllers\API\StockRequestController::class, 'index']);
     Route::post('stock-requests', [\App\Http\Controllers\API\StockRequestController::class, 'store']);

@@ -67,6 +67,7 @@ class ProductResource extends JsonResource
                 'name' => $this->category->name,
                 'color' => $this->category->color,
             ] : null),
+            'category_id' => $this->category_id,
             'kitchen_station_id' => $this->kitchen_station_id,
             'kitchen_station' => $this->whenLoaded('kitchenStation', fn() => $this->kitchenStation ? [
                 'id' => $this->kitchenStation->id,

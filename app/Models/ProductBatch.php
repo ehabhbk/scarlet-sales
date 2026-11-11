@@ -19,6 +19,9 @@ class ProductBatch extends Model
         'batch_number',
         'quantity',
         'cost_price',
+        'sale_price',
+        'min_stock',
+        'expiry_alert_days',
         'expiry_date',
         'received_at',
         'notes',
@@ -27,6 +30,9 @@ class ProductBatch extends Model
     protected $casts = [
         'quantity' => 'decimal:3',
         'cost_price' => 'decimal:4',
+        'sale_price' => 'decimal:4',
+        'min_stock' => 'integer',
+        'expiry_alert_days' => 'integer',
         'expiry_date' => 'date',
         'received_at' => 'datetime',
     ];

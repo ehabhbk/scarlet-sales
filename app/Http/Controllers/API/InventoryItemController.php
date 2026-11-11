@@ -205,6 +205,10 @@ class SupplierController extends Controller
 
 class PurchaseController extends Controller
 {
+    public function __construct(protected StockService $stock)
+    {
+    }
+
     public function index(Request $request)
     {
         $restaurantId = $request->user()->restaurant_id;
@@ -247,7 +251,7 @@ class PurchaseController extends Controller
             'items.*.inventory_item_id' => 'nullable|exists:inventory_items,id',
             'items.*.product_id' => 'nullable|exists:products,id',
             'items.*.warehouse_id' => 'nullable|integer',
-            'items.*.main_quantity' => 'required|numeric|min:0',
+            'items.*.main_quantity' => 'nullable|numeric|min:0',
             'items.*.sub_quantity_per_main' => 'nullable|numeric|min:0',
             'items.*.unit_name' => 'nullable|string|max:50',
             'items.*.sub_unit_name' => 'nullable|string|max:50',
@@ -305,6 +309,7 @@ class PurchaseController extends Controller
                 'payment_method' => $paymentMethod,
                 'order_date' => $validated['order_date'],
                 'expected_date' => $validated['expected_date'] ?? null,
+                'received_date' => $purchaseStatus === 'received' ? now() : null,
                 'notes' => $validated['notes'] ?? null,
             ]);
 
@@ -360,48 +365,8 @@ class PurchaseController extends Controller
 
             // If received, add to inventory (product batches or legacy inventory items)
             if ($purchaseStatus === 'received') {
-                foreach ($validated['items'] as $it) {
-                    $inventoryItemId = $it['inventory_item_id'] ?? null;
-                    $productId = $it['product_id'] ?? null;
-                    $warehouseId = $it['warehouse_id'] ?? null;
-                    // الكمية المستلمة هي الكمية الرئيسية (يتم تخزينها بالوحدة الأساسية)
-                    $qty = (float) ($it['main_quantity'] ?? $it['quantity'] ?? 0);
-                    $cost = (float) $it['unit_cost'];
-
-                    if ($productId && $warehouseId) {
-                        $this->stock->stockIn(
-                            $restaurantId,
-                            (int) $warehouseId,
-                            (int) $productId,
-                            $qty,
-                            [
-                                'cost_price' => $cost,
-                                'expiry_date' => $it['expiry_date'] ?? null,
-                                'batch_number' => $it['batch_number'] ?? null,
-                                'supplier_id' => $validated['supplier_id'],
-                            ],
-                            (int) $request->user()->id,
-                            'purchase_receive'
-                        );
-                        continue;
-                    }
-                    if ($inventoryItemId) {
-                        $item = InventoryItem::find($inventoryItemId);
-                        $item->increment('current_stock', $qty);
-                        StockMovement::create([
-                            'restaurant_id' => $restaurantId,
-                            'inventory_item_id' => $inventoryItemId,
-                            'type' => 'in',
-                            'quantity' => $qty,
-                            'cost_per_unit' => $cost,
-                            'total_cost' => $qty * $cost,
-                            'reference_type' => 'purchase',
-                            'reference_id' => $purchase->id,
-                            'user_id' => $request->user()->id,
-                            'notes' => "استلام مشتريات #{$validated['purchase_number']}",
-                        ]);
-                    }
-                }
+                $purchase->load('items');
+                $this->receivePurchaseItems($purchase, (int) $request->user()->id);
             }
 
             if ($amountPaid > 0) {
@@ -442,9 +407,79 @@ class PurchaseController extends Controller
             'status' => 'sometimes|in:draft,ordered,received,cancelled',
             'notes' => 'sometimes|string',
         ]);
-        $purchase->update($validated);
 
-        return response()->json(['purchase' => $purchase->fresh(), 'message' => 'تم تحديث طلب الشراء']);
+        DB::transaction(function () use ($purchase, $validated, $request) {
+            $newStatus = $validated['status'] ?? null;
+
+            // Moving a purchase order into "received" posts its quantities to the
+            // warehouse/store selected on each line. The received_date guard makes
+            // the operation idempotent so repeated saves never double-post stock.
+            if ($newStatus === 'received' && ! $purchase->received_date) {
+                $purchase->load('items');
+                $this->receivePurchaseItems($purchase, (int) $request->user()->id);
+                $validated['received_date'] = now();
+            }
+
+            $purchase->update($validated);
+        });
+
+        return response()->json([
+            'purchase' => $purchase->fresh()->load('supplier', 'items.product', 'items.inventoryItem', 'items.warehouse', 'account', 'payments'),
+            'message' => 'تم تحديث طلب الشراء',
+        ]);
+    }
+
+    /**
+     * Post every purchase line into its destination warehouse/store.
+     */
+    private function receivePurchaseItems(Purchase $purchase, int $userId): void
+    {
+        foreach ($purchase->items as $item) {
+            $quantity = (float) ($item->main_quantity ?? $item->quantity ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+            $cost = (float) $item->unit_cost;
+
+            if ($item->product_id && $item->warehouse_id) {
+                $this->stock->stockIn(
+                    (int) $purchase->restaurant_id,
+                    (int) $item->warehouse_id,
+                    (int) $item->product_id,
+                    $quantity,
+                    [
+                        'cost_price' => $cost,
+                        'expiry_date' => $item->expiry_date?->toDateString(),
+                        'batch_number' => $item->batch_number,
+                        'supplier_id' => $purchase->supplier_id,
+                    ],
+                    $userId,
+                    'purchase_receive',
+                    (int) $purchase->id
+                );
+                continue;
+            }
+
+            if ($item->inventory_item_id) {
+                $inventoryItem = InventoryItem::find($item->inventory_item_id);
+                if (! $inventoryItem) {
+                    continue;
+                }
+                $inventoryItem->increment('current_stock', $quantity);
+                StockMovement::create([
+                    'restaurant_id' => $purchase->restaurant_id,
+                    'inventory_item_id' => $item->inventory_item_id,
+                    'type' => 'in',
+                    'quantity' => $quantity,
+                    'cost_per_unit' => $cost,
+                    'total_cost' => $quantity * $cost,
+                    'reference_type' => 'purchase',
+                    'reference_id' => $purchase->id,
+                    'user_id' => $userId,
+                    'notes' => "استلام مشتريات #{$purchase->purchase_number}",
+                ]);
+            }
+        }
     }
 
     public function destroy(Purchase $purchase)

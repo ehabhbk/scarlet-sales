@@ -961,7 +961,7 @@ class ShiftWorkflowController extends Controller
                 ->where(function ($query) {
                     $query->where('payment_status', 'paid')->orWhere('status', 'completed');
                 })
-                ->with(['table', 'customer', 'items.product', 'payments'])
+                ->with(['table', 'customer', 'items.product', 'payments', 'warehouse:id,name'])
                 ->orderBy('created_at')
                 ->get();
 
@@ -987,6 +987,8 @@ class ShiftWorkflowController extends Controller
                     'payment_status' => $order->payment_status,
                     'table_name' => $order->table?->name,
                     'customer_name' => $order->customer?->name,
+                    'warehouse_id' => $order->warehouse_id,
+                    'warehouse_name' => $order->warehouse?->name,
                     'cashier_name' => $cashier?->name,
                     'items_count' => (int) $order->items->sum('quantity'),
                     'items' => $order->items->map(fn ($item) => [

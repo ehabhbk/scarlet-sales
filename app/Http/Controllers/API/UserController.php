@@ -68,7 +68,14 @@ class UserController extends Controller
                     ->where('is_active', true)),
             ],
             'image_file' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'warehouses' => 'sometimes|array',
+            'warehouses.*.id' => 'required|integer|exists:warehouses,id',
+            'warehouses.*.can_sell' => 'boolean',
+            'warehouses.*.can_request_stock' => 'boolean',
+            'warehouses.*.can_approve_stock' => 'boolean',
         ]);
+        $warehouses = $validated['warehouses'] ?? null;
+        unset($validated['warehouses']);
         $validated['restaurant_id'] = $request->user()->restaurant_id;
         $validated['password'] = Hash::make($validated['password']);
         $roleName = $validated['role'];
@@ -77,13 +84,17 @@ class UserController extends Controller
             $validated['avatar'] = $request->file('image_file')->store('users', 'public');
         }
         unset($validated['image_file']);
-        $user = DB::transaction(function () use ($validated, $roleName) {
+        $user = DB::transaction(function () use ($validated, $roleName, $warehouses) {
             $user = User::create($validated);
             $role = Role::where('name', $roleName)->where('guard_name', 'sanctum')->first();
             if ($role) {
                 $user->assignRole($role);
             }
             app(CashierAccountService::class)->ensureFor($user);
+
+            if (is_array($warehouses)) {
+                $this->syncUserWarehouses($user, $warehouses, (int) $user->restaurant_id);
+            }
 
             return $user;
         });
@@ -144,7 +155,14 @@ class UserController extends Controller
                     ->where('is_active', true)),
             ],
             'image_file' => 'sometimes|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'warehouses' => 'sometimes|array',
+            'warehouses.*.id' => 'required|integer|exists:warehouses,id',
+            'warehouses.*.can_sell' => 'boolean',
+            'warehouses.*.can_request_stock' => 'boolean',
+            'warehouses.*.can_approve_stock' => 'boolean',
         ]);
+        $warehouses = $validated['warehouses'] ?? null;
+        unset($validated['warehouses']);
         if ($request->has('password')) {
             $validated['password'] = Hash::make($validated['password']);
         }
@@ -170,7 +188,7 @@ class UserController extends Controller
             }
         }
 
-        DB::transaction(function () use ($user, $validated, $role, $updateEmployeeAccount) {
+        DB::transaction(function () use ($user, $validated, $role, $updateEmployeeAccount, $warehouses) {
             $user->update($validated);
             if ($role) {
                 $user->syncRoles([$role]);
@@ -181,6 +199,9 @@ class UserController extends Controller
                 Employee::where('restaurant_id', $user->restaurant_id)
                     ->where('user_id', $user->id)
                     ->update(['pay_account_id' => $user->pay_account_id]);
+            }
+            if (is_array($warehouses)) {
+                $this->syncUserWarehouses($user, $warehouses, (int) $user->restaurant_id);
             }
         });
 
@@ -258,6 +279,34 @@ class UserController extends Controller
         });
 
         return response()->json(['message' => 'تم تحديث مخازن المستخدم']);
+    }
+
+    /**
+     * Replace the user's warehouse/store assignments with the submitted list.
+     */
+    protected function syncUserWarehouses(User $user, array $warehouses, int $restaurantId): void
+    {
+        UserWarehouse::where('user_id', $user->id)->delete();
+
+        $validIds = Warehouse::where('restaurant_id', $restaurantId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        foreach ($warehouses as $row) {
+            $warehouseId = (int) ($row['id'] ?? 0);
+            if ($warehouseId === 0 || ! in_array($warehouseId, $validIds, true)) {
+                continue;
+            }
+
+            UserWarehouse::create([
+                'user_id' => $user->id,
+                'warehouse_id' => $warehouseId,
+                'can_sell' => (bool) ($row['can_sell'] ?? false),
+                'can_request_stock' => (bool) ($row['can_request_stock'] ?? false),
+                'can_approve_stock' => (bool) ($row['can_approve_stock'] ?? false),
+            ]);
+        }
     }
 }
 

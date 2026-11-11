@@ -90,12 +90,26 @@ class StockService
         $expiryDate = $data['expiry_date'] ?? null;
         $costPrice = (float) ($data['cost_price'] ?? 0);
 
+        $batchQuery = ProductBatch::where('restaurant_id', $restaurantId)
+            ->where('warehouse_id', $warehouseId)
+            ->where('product_id', $productId);
+
         $batch = null;
         if ($batchNumber) {
-            $batch = ProductBatch::where('restaurant_id', $restaurantId)
-                ->where('warehouse_id', $warehouseId)
-                ->where('product_id', $productId)
+            // An explicit batch number identifies the lot on its own.
+            $batch = (clone $batchQuery)
                 ->where('batch_number', $batchNumber)
+                ->first();
+        } else {
+            // Without a batch number, the same expiry date is the same lot:
+            // matching expiry increments quantity, a different expiry creates
+            // an independent batch row.
+            $batch = (clone $batchQuery)
+                ->when(
+                    $expiryDate,
+                    fn ($query) => $query->whereDate('expiry_date', $expiryDate),
+                    fn ($query) => $query->whereNull('expiry_date')
+                )
                 ->first();
         }
 
@@ -359,6 +373,40 @@ class StockService
         ]);
 
         $this->syncProductStock($batch->product_id);
+
+        return $batch->fresh();
+    }
+
+    /**
+     * Update a batch's editable details (quantity, cost, expiry, batch number).
+     */
+    public function updateBatch(int $batchId, array $data, ?int $userId = null): ProductBatch
+    {
+        $batch = ProductBatch::findOrFail($batchId);
+
+        if (array_key_exists('quantity', $data) && $data['quantity'] !== null && $data['quantity'] !== '') {
+            $batch = $this->adjustBatch(
+                $batch->id,
+                (float) $data['quantity'],
+                $userId,
+                $data['notes'] ?? 'تعديل كمية الدفعة'
+            );
+        }
+
+        $attributes = [];
+        if (array_key_exists('cost_price', $data) && $data['cost_price'] !== null && $data['cost_price'] !== '') {
+            $attributes['cost_price'] = (float) $data['cost_price'];
+        }
+        if (array_key_exists('expiry_date', $data)) {
+            $attributes['expiry_date'] = $data['expiry_date'] ?: null;
+        }
+        if (array_key_exists('batch_number', $data)) {
+            $attributes['batch_number'] = $data['batch_number'] ?: null;
+        }
+
+        if ($attributes !== []) {
+            $batch->update($attributes);
+        }
 
         return $batch->fresh();
     }

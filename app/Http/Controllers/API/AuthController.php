@@ -137,12 +137,21 @@ class AuthController extends Controller
     public function myWarehouses(Request $request)
     {
         $user = $request->user();
+
+        // Admins always have full access. Users without any explicit location
+        // assignment are treated as unrestricted too, so existing accounts keep
+        // working until an admin narrows their permissions.
+        $isAdmin = $user->hasAnyRole(['admin', 'Super Admin', 'Admin'], 'sanctum');
+        $unrestricted = $isAdmin || ! $user->userWarehouses()->exists();
+
         $warehouses = Warehouse::where('restaurant_id', $user->restaurant_id)
             ->where('is_active', true)
             ->orderBy('name')
             ->get()
-            ->map(function ($w) use ($user) {
-                $pivot = $user->userWarehouses()->where('warehouse_id', $w->id)->first();
+            ->map(function ($w) use ($user, $unrestricted) {
+                $pivot = $unrestricted
+                    ? null
+                    : $user->userWarehouses()->where('warehouse_id', $w->id)->first();
                 return [
                     'id' => $w->id,
                     'name' => $w->name,
@@ -150,8 +159,9 @@ class AuthController extends Controller
                     'allow_sales' => (bool) $w->allow_sales,
                     'is_active' => (bool) $w->is_active,
                     'is_default' => (bool) $w->is_default,
-                    'can_sell' => $pivot ? (bool) $pivot->can_sell : false,
-                    'can_request_stock' => $pivot ? (bool) $pivot->can_request_stock : false,
+                    'can_sell' => $unrestricted ? true : ($pivot ? (bool) $pivot->can_sell : false),
+                    'can_request_stock' => $unrestricted ? true : ($pivot ? (bool) $pivot->can_request_stock : false),
+                    'can_approve_stock' => $unrestricted ? true : ($pivot ? (bool) $pivot->can_approve_stock : false),
                 ];
             });
 
