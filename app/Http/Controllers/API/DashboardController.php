@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Support\PublicMediaUrl;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductBatch;
+use App\Models\Warehouse;
 use App\Models\Expense;
 use App\Models\Purchase;
 use App\Models\InventoryItem;
@@ -407,9 +409,51 @@ class DashboardController extends Controller
         return response()->json(['low_stock' => $items]);
     }
 
+    public function warehouseStats(Request $request)
+    {
+        $restaurantId = $request->user()->restaurant_id;
+
+        $warehousesCount = Warehouse::where('restaurant_id', $restaurantId)
+            ->where('type', '!=', 'store')
+            ->where('is_active', true)
+            ->count();
+        $storesCount = Warehouse::where('restaurant_id', $restaurantId)
+            ->where('type', 'store')
+            ->where('is_active', true)
+            ->count();
+
+        $now = Carbon::now();
+        $nearExpiryCutoff = $now->copy()->addDays(30);
+
+        $batches = ProductBatch::where('restaurant_id', $restaurantId)
+            ->where('quantity', '>', 0)
+            ->get();
+
+        $expiredCount = $batches->filter(fn ($b) => $b->expiry_date && $b->expiry_date->lt($now))->count();
+        $nearExpiryCount = $batches->filter(fn ($b) => $b->expiry_date
+            && $b->expiry_date->gte($now)
+            && $b->expiry_date->lte($nearExpiryCutoff))->count();
+
+        // Low stock: products whose total batch quantity <= effective min_stock
+        $lowStockCount = Product::where('restaurant_id', $restaurantId)
+            ->where('track_inventory', true)
+            ->get()
+            ->filter(function (Product $product) {
+                $totalStock = (float) $product->batches()->sum('quantity');
+                $threshold = (int) ($product->batches()->whereNotNull('min_stock')->value('min_stock') ?? $product->min_stock);
+                return $totalStock <= $threshold;
+            })
+            ->count();
+
+        return response()->json([
+            'warehouses_count' => $warehousesCount,
+            'stores_count' => $storesCount,
+            'expired_products' => $expiredCount,
+            'near_expiry_products' => $nearExpiryCount,
+            'low_stock_products' => $lowStockCount,
+        ]);
+    }
     /**
-     * Resolve the requested date range, defaulting to the current month.
-     *
      * @return array{0: Carbon, 1: Carbon}
      */
     private function resolveRange(Request $request): array

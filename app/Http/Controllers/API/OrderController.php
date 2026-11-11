@@ -124,7 +124,7 @@ class OrderController extends Controller
             );
 
             // Restrict selling to warehouses assigned to the user (can_sell)
-            $sellableWarehouseIds = $user->warehouses->wherePivot('can_sell', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $sellableWarehouseIds = $user->warehouses()->wherePivot('can_sell', true)->pluck('warehouses.id')->map(fn ($id) => (int) $id)->all();
             if (count($sellableWarehouseIds) > 0 && $warehouseId && ! in_array($warehouseId, $sellableWarehouseIds)) {
                 throw new HttpResponseException(response()->json([
                     'message' => 'غير مسموح لك البيع من هذا المخزن/نقطة البيع.',

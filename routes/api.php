@@ -54,6 +54,7 @@ Route::middleware(['auth:sanctum', 'audit', 'api.permission:dashboard'])->prefix
     Route::get('top-products', [\App\Http\Controllers\API\DashboardController::class, 'topProducts']);
     Route::get('staff-performance', [\App\Http\Controllers\API\DashboardController::class, 'staffPerformance']);
     Route::get('inventory-alerts', [\App\Http\Controllers\API\DashboardController::class, 'inventoryAlerts']);
+    Route::get('warehouse-stats', [\App\Http\Controllers\API\DashboardController::class, 'warehouseStats']);
     Route::get('breakdowns', [\App\Http\Controllers\API\DashboardController::class, 'breakdowns']);
 });
 
@@ -159,6 +160,7 @@ Route::middleware(['auth:sanctum', 'audit', 'api.permission:reports'])->prefix('
     Route::get('profit-loss', [\App\Http\Controllers\API\ReportController::class, 'profitLoss']);
     Route::get('top-products', [\App\Http\Controllers\API\ReportController::class, 'topProducts']);
     Route::get('inventory', [\App\Http\Controllers\API\ReportController::class, 'inventory']);
+    Route::get('warehouse', [\App\Http\Controllers\API\ReportController::class, 'warehouse']);
 Route::get('inventory/expired', [\App\Http\Controllers\API\ReportController::class, 'expiredProducts']);
     Route::get('purchases', [\App\Http\Controllers\API\ReportController::class, 'purchases']);
     Route::get('expenses', [\App\Http\Controllers\API\ReportController::class, 'expenses']);

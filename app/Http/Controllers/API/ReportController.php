@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\ProductBatch;
 use App\Models\InventoryItem;
 use App\Models\Shift;
+use App\Models\Warehouse;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -188,6 +189,96 @@ class ReportController extends Controller
             'expired' => $rows->values(),
             'total_loss' => round((float) $rows->sum('loss'), 2),
             'total_quantity' => (float) $rows->sum('quantity'),
+        ]);
+    }
+
+    public function warehouse(Request $request)
+    {
+        $restaurantId = $request->user()->restaurant_id;
+        $warehouseId = $request->query('warehouse_id');
+        abort_unless($warehouseId, 422, 'warehouse_id is required');
+
+        $warehouse = Warehouse::where('restaurant_id', $restaurantId)->findOrFail($warehouseId);
+
+        $from = $request->filled('from') ? Carbon::parse($request->query('from'))->startOfDay() : Carbon::now()->startOfMonth();
+        $to = $request->filled('to') ? Carbon::parse($request->query('to'))->endOfDay() : Carbon::now()->endOfDay();
+
+        $batches = ProductBatch::where('restaurant_id', $restaurantId)
+            ->where('warehouse_id', $warehouseId)
+            ->where('quantity', '>', 0)
+            ->with(['product:id,name,sku,barcode,sale_unit,purchase_unit,main_unit,sub_unit,conversion_factor', 'warehouse:id,name'])
+            ->orderBy('expiry_date')
+            ->get();
+
+        $now = Carbon::now();
+        $cutoff = $now->copy()->addDays(30);
+
+        $batchRows = $batches->map(function (ProductBatch $batch) {
+            return [
+                'batch_id' => $batch->id,
+                'product_id' => $batch->product_id,
+                'name' => $batch->product?->name,
+                'sku' => $batch->product?->sku,
+                'barcode' => $batch->product?->barcode,
+                'batch_number' => $batch->batch_number,
+                'quantity' => (float) $batch->quantity,
+                'cost_price' => (float) $batch->cost_price,
+                'sale_price' => (float) ($batch->sale_price ?? $batch->product?->sale_price ?? 0),
+                'min_stock' => (int) ($batch->min_stock ?? $batch->product?->min_stock ?? 0),
+                'expiry_date' => $batch->expiry_date?->toDateString(),
+                'stock_value' => round((float) $batch->quantity * (float) $batch->cost_price, 2),
+            ];
+        })->values();
+
+        $expired = $batches->filter(fn ($b) => $b->expiry_date && $b->expiry_date->lt($now));
+        $nearExpiry = $batches->filter(fn ($b) => $b->expiry_date && $b->expiry_date->gte($now) && $b->expiry_date->lte($cutoff));
+
+        // Low stock: aggregate quantity per product
+        $productStocks = $batches->groupBy('product_id')->map(function ($group) {
+            return [
+                'product_id' => $group->first()->product_id,
+                'name' => $group->first()->product?->name,
+                'quantity' => (float) $group->sum('quantity'),
+                'min_stock' => (int) ($group->first()->min_stock ?? $group->first()->product?->min_stock ?? 0),
+            ];
+        })->filter(fn ($row) => $row['min_stock'] > 0 && $row['quantity'] <= $row['min_stock'])->values();
+
+        $totalQuantity = (float) $batches->sum('quantity');
+        $stockValue = round((float) $batches->sum(fn ($b) => (float) $b->quantity * (float) $b->cost_price), 2);
+
+        return response()->json([
+            'warehouse' => [
+                'id' => $warehouse->id,
+                'name' => $warehouse->name,
+                'type' => $warehouse->type,
+                'address' => $warehouse->address,
+                'phone' => $warehouse->phone,
+            ],
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'summary' => [
+                'products_count' => $batches->pluck('product_id')->unique()->count(),
+                'total_quantity' => $totalQuantity,
+                'stock_value' => $stockValue,
+                'expired_count' => $expired->count(),
+                'near_expiry_count' => $nearExpiry->count(),
+                'low_stock_count' => $productStocks->count(),
+            ],
+            'batches' => $batchRows,
+            'expired' => $expired->map(fn ($b) => [
+                'name' => $b->product?->name,
+                'batch_number' => $b->batch_number,
+                'quantity' => (float) $b->quantity,
+                'expiry_date' => $b->expiry_date?->toDateString(),
+                'loss' => round((float) $b->quantity * (float) $b->cost_price, 2),
+            ])->values(),
+            'near_expiry' => $nearExpiry->map(fn ($b) => [
+                'name' => $b->product?->name,
+                'batch_number' => $b->batch_number,
+                'quantity' => (float) $b->quantity,
+                'expiry_date' => $b->expiry_date?->toDateString(),
+            ])->values(),
+            'low_stock' => $productStocks,
         ]);
     }
 
